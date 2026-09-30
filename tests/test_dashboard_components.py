@@ -87,3 +87,28 @@ def test_top_region_differentiation_by_sido():
     assert kpis["top_sgg"] == "서울 강남구"
     assert kpis["top_sgg_count"] == 4
 
+
+def test_daily_report_kpi_metrics():
+    trades = pd.DataFrame([
+        {"deal_date": "2026-09-30", "deal_amount": 120000, "price_per_pyeong": 4000, "apt_name": "A", "sido": "서울특별시", "sgg": "강남구"},
+        {"deal_date": "2026-09-29", "deal_amount": 80000, "price_per_pyeong": 3000, "apt_name": "B", "sido": "경기도", "sgg": "성남시"},
+    ])
+    rents = pd.DataFrame([
+        {"deal_date": "2026-09-30", "deposit": 70000, "monthly_rent": 0, "rent_type": "전세", "apt_name": "C", "sido": "서울특별시", "sgg": "서초구"},
+        {"deal_date": "2026-09-29", "deposit": 10000, "monthly_rent": 80, "rent_type": "월세", "apt_name": "D", "sido": "경기도", "sgg": "수원시"},
+    ])
+
+    daily_trades = trades[trades["deal_date"] == "2026-09-30"]
+    daily_rents = rents[rents["deal_date"] == "2026-09-30"]
+
+    trade_kpis = compute_trade_kpis(daily_trades)
+    rent_kpis = compute_rent_kpis(daily_rents)
+
+    assert trade_kpis["total_deals"] == 1
+    assert trade_kpis["avg_price"] == 120000
+    assert trade_kpis["top_sgg"] == "서울 강남구"
+
+    assert rent_kpis["total_deals"] == 1
+    assert rent_kpis["jeonse_count"] == 1
+    assert rent_kpis["avg_jeonse_deposit"] == 70000
+
