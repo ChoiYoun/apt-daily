@@ -286,22 +286,22 @@ else:
     chart_col1, chart_col2 = st.columns(2)
 
     with chart_col1:
-        st.plotly_chart(create_daily_trend_chart(df), use_container_width=True)
+        st.plotly_chart(create_daily_trend_chart(df), width="stretch")
 
     with chart_col2:
-        st.plotly_chart(create_top_regions_chart(df, top_n=10), use_container_width=True)
+        st.plotly_chart(create_top_regions_chart(df, top_n=10), width="stretch")
 
     # 6.3 3단: 분포 차트
     dist_col1, dist_col2 = st.columns(2)
 
     with dist_col1:
         if is_trade:
-            st.plotly_chart(create_price_distribution_chart(df, "deal_amount", "매매가 분포"), use_container_width=True)
+            st.plotly_chart(create_price_distribution_chart(df, "deal_amount", "매매가 분포"), width="stretch")
         else:
-            st.plotly_chart(create_price_distribution_chart(df, "deposit", "보증금 분포"), use_container_width=True)
+            st.plotly_chart(create_price_distribution_chart(df, "deposit", "보증금 분포"), width="stretch")
 
     with dist_col2:
-        st.plotly_chart(create_pyeong_distribution_chart(df), use_container_width=True)
+        st.plotly_chart(create_pyeong_distribution_chart(df), width="stretch")
 
     # 6.4 4단: 상세 실거래가 데이터 테이블 & 다운로드
     st.subheader(f"📋 실거래 상세 내역 (총 {len(df):,}건)")
@@ -353,7 +353,7 @@ else:
 
     st.dataframe(
         table_df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         height=400
     )
