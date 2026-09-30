@@ -210,7 +210,8 @@ else:
         with col2:
             max_d = kpis['max_deal']
             max_title = f"{max_d['apt_name']} ({format_korean_currency(max_d['deal_amount'])})" if max_d else "-"
-            max_sub = f"{max_d['sgg']} · {max_d['pyeong']:.1f}평({max_d['exclusive_area']:.1f}㎡) · {max_d['floor']}층" if max_d else "-"
+            region_str = max_d.get('region_label', max_d.get('sgg', '-')) if max_d else "-"
+            max_sub = f"{region_str} · {max_d['pyeong']:.1f}평({max_d['exclusive_area']:.1f}㎡) · {max_d['floor']}층" if max_d else "-"
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">최고가 거래 단지</div>
@@ -229,11 +230,13 @@ else:
             """, unsafe_allow_html=True)
 
         with col4:
+            deal_cnt = kpis.get('top_sgg_count', 0)
+            sub_txt = f"최근 7일 {deal_cnt:,}건 거래" if deal_cnt > 0 else "검색 조건 내 1위"
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">최다 거래 지역</div>
                 <div class="metric-value">{kpis['top_sgg']}</div>
-                <div class="metric-sub">검색 조건 내 1위</div>
+                <div class="metric-sub">{sub_txt}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -253,7 +256,8 @@ else:
         with col2:
             max_d = kpis['max_deposit']
             max_title = f"{max_d['apt_name']} ({format_korean_currency(max_d['deposit'])})" if max_d else "-"
-            max_sub = f"{max_d['sgg']} · {max_d['rent_type']} · {max_d['exclusive_area']:.1f}㎡" if max_d else "-"
+            region_str = max_d.get('region_label', max_d.get('sgg', '-')) if max_d else "-"
+            max_sub = f"{region_str} · {max_d['rent_type']} · {max_d['exclusive_area']:.1f}㎡" if max_d else "-"
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">최고 보증금 단지</div>
@@ -272,11 +276,13 @@ else:
             """, unsafe_allow_html=True)
 
         with col4:
+            deal_cnt = kpis.get('top_sgg_count', 0)
+            sub_txt = f"최근 7일 {deal_cnt:,}건 거래" if deal_cnt > 0 else "검색 조건 내 1위"
             st.markdown(f"""
             <div class="metric-card">
                 <div class="metric-label">최다 임대 지역</div>
                 <div class="metric-value">{kpis['top_sgg']}</div>
-                <div class="metric-sub">검색 조건 내 1위</div>
+                <div class="metric-sub">{sub_txt}</div>
             </div>
             """, unsafe_allow_html=True)
 

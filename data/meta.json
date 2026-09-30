@@ -1,14 +1,14 @@
 {
-  "last_updated": "2026-09-30T14:48:12.779435",
+  "last_updated": "2026-09-30T14:49:31.585325",
   "target_date": "2026-09-30",
   "cutoff_date": "2026-09-24",
-  "trades_collected": 17,
-  "rents_collected": 247,
-  "trades_inserted": 17,
-  "rents_inserted": 242,
+  "trades_collected": 846,
+  "rents_collected": 3540,
+  "trades_inserted": 824,
+  "rents_inserted": 3014,
   "db_summary": {
-    "trade_count": 17,
-    "rent_count": 246,
+    "trade_count": 841,
+    "rent_count": 3260,
     "trade_date_range": [
       "2026-09-24",
       "2026-09-29"

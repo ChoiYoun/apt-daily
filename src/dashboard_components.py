@@ -25,6 +25,38 @@ def format_korean_currency(amount_in_manwon: Optional[int]) -> str:
         return f"{man:,}만원"
 
 
+def get_clean_region_label(sido: Optional[str], sgg: Optional[str]) -> str:
+    """시도 명칭을 친숙하게 축약하여 시군구와 결합 (예: 서울특별시 종로구 -> 서울 종로구, 경기도 수원시 장안구 -> 경기 수원시 장안구)"""
+    if not sgg:
+        return sido or "-"
+    if not sido:
+        return sgg
+
+    sido_short_map = {
+        "서울특별시": "서울",
+        "부산광역시": "부산",
+        "대구광역시": "대구",
+        "인천광역시": "인천",
+        "광주광역시": "광주",
+        "대전광역시": "대전",
+        "울산광역시": "울산",
+        "세종특별자치시": "세종",
+        "경기도": "경기",
+        "강원특별자치도": "강원",
+        "충청북도": "충북",
+        "충청남도": "충남",
+        "전북특별자치도": "전북",
+        "전라남도": "전남",
+        "경상북도": "경북",
+        "경상남도": "경남",
+        "제주특별자치도": "제주",
+    }
+    short_sido = sido_short_map.get(sido, sido)
+    if sgg == sido or sgg == short_sido:
+        return sgg
+    return f"{short_sido} {sgg}"
+
+
 def compute_trade_kpis(df: pd.DataFrame) -> Dict[str, Any]:
     """매매 데이터프레임으로부터 상단 KPI 지표 요약 산출"""
     if df.empty:
@@ -34,6 +66,7 @@ def compute_trade_kpis(df: pd.DataFrame) -> Dict[str, Any]:
             "avg_pyeong_price": 0,
             "max_deal": None,
             "top_sgg": "-",
+            "top_sgg_count": 0,
         }
 
     total_deals = len(df)
@@ -50,9 +83,25 @@ def compute_trade_kpis(df: pd.DataFrame) -> Dict[str, Any]:
         "floor": max_row.get("floor", "-"),
         "deal_date": max_row.get("deal_date", "-"),
         "sgg": max_row.get("sgg", "-"),
+        "region_label": get_clean_region_label(max_row.get("sido"), max_row.get("sgg")),
     }
 
-    top_sgg = df["sgg"].value_counts().index[0] if "sgg" in df and not df["sgg"].empty else "-"
+    if not df.empty and "sgg" in df and not df["sgg"].empty:
+        if "sido" in df:
+            top_series = df.groupby(["sido", "sgg"]).size().sort_values(ascending=False)
+            if not top_series.empty:
+                best_sido, best_sgg = top_series.index[0]
+                top_sgg = get_clean_region_label(best_sido, best_sgg)
+                top_sgg_count = int(top_series.iloc[0])
+            else:
+                top_sgg = "-"
+                top_sgg_count = 0
+        else:
+            top_sgg = df["sgg"].value_counts().index[0]
+            top_sgg_count = int(df["sgg"].value_counts().iloc[0])
+    else:
+        top_sgg = "-"
+        top_sgg_count = 0
 
     return {
         "total_deals": total_deals,
@@ -60,6 +109,7 @@ def compute_trade_kpis(df: pd.DataFrame) -> Dict[str, Any]:
         "avg_pyeong_price": avg_pyeong_price,
         "max_deal": max_deal,
         "top_sgg": top_sgg,
+        "top_sgg_count": top_sgg_count,
     }
 
 
@@ -74,6 +124,7 @@ def compute_rent_kpis(df: pd.DataFrame) -> Dict[str, Any]:
             "avg_wolse_rent": 0,
             "max_deposit": None,
             "top_sgg": "-",
+            "top_sgg_count": 0,
         }
 
     total_deals = len(df)
@@ -96,9 +147,25 @@ def compute_rent_kpis(df: pd.DataFrame) -> Dict[str, Any]:
         "exclusive_area": float(max_row.get("exclusive_area", 0.0)),
         "deal_date": max_row.get("deal_date", "-"),
         "sgg": max_row.get("sgg", "-"),
+        "region_label": get_clean_region_label(max_row.get("sido"), max_row.get("sgg")),
     }
 
-    top_sgg = df["sgg"].value_counts().index[0] if "sgg" in df and not df["sgg"].empty else "-"
+    if not df.empty and "sgg" in df and not df["sgg"].empty:
+        if "sido" in df:
+            top_series = df.groupby(["sido", "sgg"]).size().sort_values(ascending=False)
+            if not top_series.empty:
+                best_sido, best_sgg = top_series.index[0]
+                top_sgg = get_clean_region_label(best_sido, best_sgg)
+                top_sgg_count = int(top_series.iloc[0])
+            else:
+                top_sgg = "-"
+                top_sgg_count = 0
+        else:
+            top_sgg = df["sgg"].value_counts().index[0]
+            top_sgg_count = int(df["sgg"].value_counts().iloc[0])
+    else:
+        top_sgg = "-"
+        top_sgg_count = 0
 
     return {
         "total_deals": total_deals,
@@ -108,6 +175,7 @@ def compute_rent_kpis(df: pd.DataFrame) -> Dict[str, Any]:
         "avg_wolse_rent": avg_wolse_rent,
         "max_deposit": max_deposit,
         "top_sgg": top_sgg,
+        "top_sgg_count": top_sgg_count,
     }
 
 
@@ -156,8 +224,15 @@ def create_top_regions_chart(df: pd.DataFrame, top_n: int = 10) -> go.Figure:
         fig.update_layout(title="지역 데이터가 없습니다.")
         return fig
 
-    top_regions = df.groupby(["sido", "sgg"]).size().reset_index(name="count")
-    top_regions["region_label"] = top_regions["sido"] + " " + top_regions["sgg"]
+    if "sido" in df:
+        top_regions = df.groupby(["sido", "sgg"]).size().reset_index(name="count")
+        top_regions["region_label"] = top_regions.apply(
+            lambda r: get_clean_region_label(r["sido"], r["sgg"]), axis=1
+        )
+    else:
+        top_regions = df.groupby("sgg").size().reset_index(name="count")
+        top_regions["region_label"] = top_regions["sgg"]
+
     top_regions = top_regions.sort_values(by="count", ascending=True).tail(top_n)
 
     fig = go.Figure(go.Bar(

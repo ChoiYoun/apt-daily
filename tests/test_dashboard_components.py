@@ -66,3 +66,24 @@ def test_compute_rent_kpis():
     assert kpis["wolse_count"] == 1
     assert kpis["avg_jeonse_deposit"] == 100000
     assert kpis["avg_wolse_rent"] == 250
+
+
+def test_top_region_differentiation_by_sido():
+    """동명이구(북구)가 여러 시도에 존재할 때 합산되지 않고 시도별로 올바르게 1위가 산출되는지 검증"""
+    df = pd.DataFrame([
+        {"sido": "부산광역시", "sgg": "북구", "deal_amount": 30000},
+        {"sido": "부산광역시", "sgg": "북구", "deal_amount": 31000},
+        {"sido": "대구광역시", "sgg": "북구", "deal_amount": 25000},
+        {"sido": "대구광역시", "sgg": "북구", "deal_amount": 26000},
+        {"sido": "대구광역시", "sgg": "북구", "deal_amount": 27000},
+        {"sido": "서울특별시", "sgg": "강남구", "deal_amount": 150000},
+        {"sido": "서울특별시", "sgg": "강남구", "deal_amount": 160000},
+        {"sido": "서울특별시", "sgg": "강남구", "deal_amount": 170000},
+        {"sido": "서울특별시", "sgg": "강남구", "deal_amount": 180000},
+    ])
+    kpis = compute_trade_kpis(df)
+    # 기존 버그: 북구(2+3=5건)로 강남구(4건)를 제치고 북구가 1위로 오집계
+    # 정상 동작: 서울 강남구가 4건으로 1위
+    assert kpis["top_sgg"] == "서울 강남구"
+    assert kpis["top_sgg_count"] == 4
+
