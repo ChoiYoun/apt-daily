@@ -77,6 +77,21 @@ class DatabaseManager:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_rent_region ON apt_rent(sido, sgg);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_rent_apt ON apt_rent(apt_name);")
 
+            # 3. 일자별 AI 애널리스트 분석 캐시 테이블
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS daily_analysis (
+                deal_date TEXT PRIMARY KEY,
+                headline TEXT NOT NULL,
+                summary_markdown TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                trade_count INTEGER NOT NULL,
+                rent_count INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_analysis_date ON daily_analysis(deal_date);")
+
             conn.commit()
 
     def insert_trades(self, trades: List[Dict]) -> int:
@@ -251,3 +266,57 @@ class DatabaseManager:
 
         with self._get_connection() as conn:
             return pd.read_sql_query(sql, conn, params=params)
+
+    def get_daily_analysis(self, deal_date: str) -> Optional[Dict]:
+        """지정된 계약일자의 AI 애널리스트 분석 캐시 조회"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT deal_date, headline, summary_markdown, model_name, trade_count, rent_count, created_at, updated_at FROM daily_analysis WHERE deal_date = ?",
+                (deal_date,)
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return dict(row)
+
+    def save_daily_analysis(
+        self,
+        deal_date: str,
+        headline: str,
+        summary_markdown: str,
+        model_name: str,
+        trade_count: int,
+        rent_count: int
+    ) -> None:
+        """일자별 AI 애널리스트 분석 결과 저장 또는 갱신"""
+        sql = """
+        INSERT INTO daily_analysis (
+            deal_date, headline, summary_markdown, model_name, trade_count, rent_count, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(deal_date) DO UPDATE SET
+            headline=excluded.headline,
+            summary_markdown=excluded.summary_markdown,
+            model_name=excluded.model_name,
+            trade_count=excluded.trade_count,
+            rent_count=excluded.rent_count,
+            updated_at=CURRENT_TIMESTAMP;
+        """
+        with self._get_connection() as conn:
+            conn.execute(sql, (deal_date, headline, summary_markdown, model_name, trade_count, rent_count))
+            conn.commit()
+
+    def get_available_dates(self) -> List[str]:
+        """DB에 존재하는 계약일자 목록을 최신순으로 반환"""
+        sql = """
+        SELECT DISTINCT deal_date FROM apt_trade
+        UNION
+        SELECT DISTINCT deal_date FROM apt_rent
+        ORDER BY deal_date DESC;
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+            return [r[0] for r in rows if r[0]]
+
