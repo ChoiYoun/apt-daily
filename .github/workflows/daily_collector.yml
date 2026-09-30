@@ -24,6 +24,16 @@ jobs:
       - name: Install Dependencies
         run: uv sync
 
+      - name: Verify Secret Availability
+        env:
+          KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::DATA_GO_KR_API_KEY Secret이 설정되지 않았습니다! GitHub 저장소 Settings -> Secrets and variables -> Actions에서 DATA_GO_KR_API_KEY를 추가해 주세요."
+            exit 1
+          fi
+          echo "✅ DATA_GO_KR_API_KEY Secret이 정상 주입되었습니다."
+
       - name: Run Collector
         env:
           DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
