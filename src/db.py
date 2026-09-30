@@ -285,7 +285,7 @@ class DatabaseManager:
         deal_date: str,
         headline: str,
         summary_markdown: str,
-        model_name: str = "gemini-1.5-flash",
+        model_name: str = "gemini-flash-lite-latest",
         trade_count: int = 0,
         rent_count: int = 0
     ) -> None:

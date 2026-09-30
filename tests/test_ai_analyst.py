@@ -182,10 +182,11 @@ def test_gemini_client_force_refresh(tmp_path):
     assert saved["headline"] == "# 새로고침 헤드라인"
 
 
-def test_gemini_client_no_api_key(tmp_path):
+def test_gemini_client_no_api_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     db = DatabaseManager(db_path=str(tmp_path / "test.db"))
     db.init_db()
-    client = GeminiAnalystClient(api_key=None)
+    client = GeminiAnalystClient(api_key="")
 
     res = client.get_or_create_daily_analysis(
         db_manager=db,

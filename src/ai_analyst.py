@@ -152,20 +152,32 @@ def build_analyst_prompt(context: Dict[str, Any], deal_date: str) -> str:
     return prompt
 
 
+DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"
+FALLBACK_GEMINI_MODELS = [
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.8-flash",
+]
+
+
 class GeminiAnalystClient:
     """Google Gemini REST API 클라이언트 및 분석 리포트 캐싱 오케스트레이터"""
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: str = DEFAULT_GEMINI_MODEL):
         load_dotenv()
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        if api_key is not None:
+            self.api_key = api_key
+        else:
+            self.api_key = os.getenv("GEMINI_API_KEY")
         self.model = model
 
     def call_gemini(self, prompt: str) -> Tuple[str, str]:
-        """Gemini 1.5 Flash REST API를 호출하여 헤드라인과 본문 마크다운을 반환"""
+        """Google Gemini REST API를 호출하여 헤드라인과 본문 마크다운을 반환 (모델 대체 폴백 지원)"""
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY가 설정되어 있지 않습니다.")
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        models_to_try = [self.model] + [m for m in FALLBACK_GEMINI_MODELS if m != self.model]
         headers = {"Content-Type": "application/json"}
         payload = {
             "contents": [{
@@ -177,48 +189,59 @@ class GeminiAnalystClient:
             }
         }
 
-        # 최대 2회 시도
         last_err = None
-        for attempt in range(1, 3):
-            try:
-                res = requests.post(url, headers=headers, json=payload, timeout=35)
-                res.raise_for_status()
-                data = res.json()
 
-                candidates = data.get("candidates", [])
-                if not candidates:
-                    raise ValueError(f"Gemini API 응답에 후보(candidates)가 없습니다: {data}")
+        for model_name in models_to_try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
+            
+            # 모델당 최대 2회 시도
+            for attempt in range(1, 3):
+                try:
+                    res = requests.post(url, headers=headers, json=payload, timeout=35)
+                    # 404(모델 미지원)나 503(서버 일시 과부하)일 경우 다음 모델로 폴백
+                    if res.status_code in (404, 503):
+                        logger.warning(f"Gemini 모델 '{model_name}' 응답 코드 {res.status_code}. 다음 후보 모델로 시도합니다.")
+                        last_err = requests.HTTPError(f"{res.status_code} Error for model {model_name}: {res.text[:120]}", response=res)
+                        break
 
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if not parts:
-                    raise ValueError(f"Gemini API 응답에 내용(parts)이 없습니다: {candidates[0]}")
+                    res.raise_for_status()
+                    data = res.json()
 
-                full_text = parts[0].get("text", "").strip()
-                if not full_text:
-                    raise ValueError("Gemini API가 빈 텍스트를 반환했습니다.")
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        raise ValueError(f"Gemini API 응답에 후보(candidates)가 없습니다: {data}")
 
-                # 첫 번째 줄을 헤드라인으로 추출, 나머지를 본문으로 파싱
-                lines = full_text.splitlines()
-                headline = ""
-                content_lines = []
-                found_headline = False
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if not parts:
+                        raise ValueError(f"Gemini API 응답에 내용(parts)이 없습니다: {candidates[0]}")
 
-                for line in lines:
-                    stripped = line.strip()
-                    if not found_headline and stripped:
-                        headline = stripped
-                        found_headline = True
-                    elif found_headline:
-                        content_lines.append(line)
+                    full_text = parts[0].get("text", "").strip()
+                    if not full_text:
+                        raise ValueError("Gemini API가 빈 텍스트를 반환했습니다.")
 
-                summary_markdown = "\n".join(content_lines).strip()
-                return headline, summary_markdown
+                    # 첫 번째 줄을 헤드라인으로 추출, 나머지를 본문으로 파싱
+                    lines = full_text.splitlines()
+                    headline = ""
+                    content_lines = []
+                    found_headline = False
 
-            except requests.RequestException as e:
-                last_err = e
-                logger.warning(f"Gemini API 호출 {attempt}회차 실패: {e}")
-                if attempt < 2:
-                    time.sleep(1.5)
+                    for line in lines:
+                        stripped = line.strip()
+                        if not found_headline and stripped:
+                            headline = stripped
+                            found_headline = True
+                        elif found_headline:
+                            content_lines.append(line)
+
+                    summary_markdown = "\n".join(content_lines).strip()
+                    self.model = model_name
+                    return headline, summary_markdown
+
+                except requests.RequestException as e:
+                    last_err = e
+                    logger.warning(f"Gemini API 호출 ({model_name}) {attempt}회차 실패: {e}")
+                    if attempt < 2:
+                        time.sleep(1.5)
 
         raise RuntimeError(f"Gemini API 호출에 최종 실패했습니다: {last_err}")
 
