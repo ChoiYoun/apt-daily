@@ -1,0 +1,152 @@
+"""Google Gemini API 기반 부동산 시장 일일 애널리스트 분석 리포트 모듈"""
+
+import os
+import json
+import time
+import logging
+import requests
+import pandas as pd
+from typing import Optional, Dict, Any, Tuple, List
+from dotenv import load_dotenv
+
+from src.dashboard_components import format_korean_currency, get_clean_region_label
+
+logger = logging.getLogger(__name__)
+
+
+def prepare_daily_context(trades_df: pd.DataFrame, rents_df: pd.DataFrame) -> Dict[str, Any]:
+    """당일 실거래 데이터를 애널리스트 프롬프트에 주입하기 위한 핵심 요약 지표로 전처리"""
+    ctx: Dict[str, Any] = {}
+
+    # 1. 매매 데이터 전처리
+    if trades_df is not None and not trades_df.empty:
+        ctx["trade_count"] = len(trades_df)
+        ctx["avg_trade_price"] = int(trades_df["deal_amount"].mean()) if "deal_amount" in trades_df else 0
+        ctx["avg_trade_pyeong_price"] = int(trades_df["price_per_pyeong"].mean()) if "price_per_pyeong" in trades_df else 0
+
+        # 최고가 거래 단지 TOP 3
+        sorted_trades = trades_df.sort_values(by="deal_amount", ascending=False).head(3)
+        top_trades = []
+        for _, row in sorted_trades.iterrows():
+            reg = get_clean_region_label(row.get("sido"), row.get("sgg"))
+            top_trades.append({
+                "apt_name": str(row.get("apt_name", "-")),
+                "region": reg,
+                "deal_amount": int(row.get("deal_amount", 0)),
+                "deal_amount_str": format_korean_currency(row.get("deal_amount")),
+                "area_str": f"{float(row.get('exclusive_area', 0)):.1f}㎡({row.get('floor', '-')}층)"
+            })
+        ctx["top_trades"] = top_trades
+
+        # 최다 거래 지역 TOP 3
+        if "sido" in trades_df and "sgg" in trades_df:
+            reg_counts = trades_df.groupby(["sido", "sgg"]).size().sort_values(ascending=False).head(3)
+            ctx["top_trade_regions"] = [
+                (get_clean_region_label(idx[0], idx[1]), int(cnt)) for idx, cnt in reg_counts.items()
+            ]
+        else:
+            ctx["top_trade_regions"] = []
+    else:
+        ctx["trade_count"] = 0
+        ctx["avg_trade_price"] = 0
+        ctx["avg_trade_pyeong_price"] = 0
+        ctx["top_trades"] = []
+        ctx["top_trade_regions"] = []
+
+    # 2. 전월세 데이터 전처리
+    if rents_df is not None and not rents_df.empty:
+        ctx["rent_count"] = len(rents_df)
+        jeonse_df = rents_df[rents_df["rent_type"] == "전세"]
+        wolse_df = rents_df[rents_df["rent_type"] == "월세"]
+
+        ctx["jeonse_count"] = len(jeonse_df)
+        ctx["wolse_count"] = len(wolse_df)
+        ctx["jeonse_ratio"] = round((len(jeonse_df) / len(rents_df)) * 100, 1) if len(rents_df) > 0 else 0.0
+
+        ctx["avg_jeonse_deposit"] = int(jeonse_df["deposit"].mean()) if not jeonse_df.empty else 0
+        ctx["avg_wolse_rent"] = int(wolse_df["monthly_rent"].mean()) if not wolse_df.empty else 0
+
+        # 최고 보증금 단지 TOP 3
+        sorted_rents = rents_df.sort_values(by="deposit", ascending=False).head(3)
+        top_rents = []
+        for _, row in sorted_rents.iterrows():
+            reg = get_clean_region_label(row.get("sido"), row.get("sgg"))
+            top_rents.append({
+                "apt_name": str(row.get("apt_name", "-")),
+                "region": reg,
+                "deposit": int(row.get("deposit", 0)),
+                "deposit_str": format_korean_currency(row.get("deposit")),
+                "monthly_rent": int(row.get("monthly_rent", 0)),
+                "rent_type": str(row.get("rent_type", "-"))
+            })
+        ctx["top_rents"] = top_rents
+    else:
+        ctx["rent_count"] = 0
+        ctx["jeonse_count"] = 0
+        ctx["wolse_count"] = 0
+        ctx["jeonse_ratio"] = 0.0
+        ctx["avg_jeonse_deposit"] = 0
+        ctx["avg_wolse_rent"] = 0
+        ctx["top_rents"] = []
+
+    return ctx
+
+
+def build_analyst_prompt(context: Dict[str, Any], deal_date: str) -> str:
+    """부동산 시장 수석 애널리스트 페르소나 및 정제된 데이터를 결합하여 프롬프트 생성"""
+    trade_count = context.get("trade_count", 0)
+    avg_price_str = format_korean_currency(context.get("avg_trade_price", 0))
+    avg_pyeong_str = f"{context.get('avg_trade_pyeong_price', 0):,}만원"
+
+    top_trades_text = "\n".join([
+        f"- {t['apt_name']} ({t['region']}): {t['deal_amount_str']} / {t['area_str']}"
+        for t in context.get("top_trades", [])
+    ]) or "해당 없음"
+
+    top_regions_text = ", ".join([
+        f"{r[0]} ({r[1]}건)" for r in context.get("top_trade_regions", [])
+    ]) or "해당 없음"
+
+    rent_count = context.get("rent_count", 0)
+    jeonse_cnt = context.get("jeonse_count", 0)
+    wolse_cnt = context.get("wolse_count", 0)
+    jeonse_ratio = context.get("jeonse_ratio", 0.0)
+    avg_deposit_str = format_korean_currency(context.get("avg_jeonse_deposit", 0))
+    avg_wolse_rent_str = f"{context.get('avg_wolse_rent', 0):,}만원"
+
+    top_rents_text = "\n".join([
+        f"- {r['apt_name']} ({r['region']}): 보증금 {r['deposit_str']} ({r['rent_type']})"
+        for r in context.get("top_rents", [])
+    ]) or "해당 없음"
+
+    prompt = f"""
+당신은 15년 경력의 대한민국 부동산 수석 시장 애널리스트입니다.
+아래에 제공된 {deal_date} 하루 동안 신고된 전국 아파트 실거래 데이터 요약 지표를 면밀히 분석하여, 투자자와 실수요자가 당일 시장의 흐름과 특징을 명확히 이해할 수 있는 전문적이고 객관적인 '데일리 마켓 브리핑 리포트'를 작성해 주세요.
+
+[기준 일자]
+- 계약 일자: {deal_date}
+
+[당일 매매 시장 팩트 데이터]
+- 총 매매 건수: {trade_count:,}건
+- 평균 거래 금액: {avg_price_str} (평균 평당 {avg_pyeong_str})
+- 거래량 상위 집중 지역: {top_regions_text}
+- 당일 주요 최고가 거래 단지 TOP 3:
+{top_trades_text}
+
+[당일 전월세 시장 팩트 데이터]
+- 총 전월세 거래량: {rent_count:,}건 (전세 {jeonse_cnt}건, 월세 {wolse_cnt}건, 전세 비중 {jeonse_ratio}%)
+- 평균 전세 보증금: {avg_deposit_str} / 평균 월세액: {avg_wolse_rent_str}
+- 당일 최고 보증금 단지 TOP 3:
+{top_rents_text}
+
+[작성 및 출력 가이드라인]
+1. 반드시 첫 번째 줄은 `# [한줄 마켓 헤드라인]` 형태로 전체 시장을 관통하는 간결하고 핵심적인 1줄 요약 제목을 작성하세요. (따옴표나 다른 부가 텍스트 없이)
+2. 헤드라인 다음 줄부터 아래 4개 항목을 포함한 구조화된 마크다운 본문을 작성하세요:
+   - ### 1. 📊 시장 유동성 및 거래 온도: 당일 거래량 수준과 평균 가격대를 통한 시장 심리 평가
+   - ### 2. 🏢 매매 시장 특징 & 주요 단지: 최고가 거래 단지의 상징성과 거래가 활발했던 지역의 시사점
+   - ### 3. 🔑 전월세 동향 & 임대 시장 흐름: 전세 vs 월세 비중, 보증금 수준을 통한 임대차 시장 특징
+   - ### 4. 💡 애널리스트 총평 & 관전 포인트: 실수요자와 투자자 관점에서 주목해야 할 향후 체크포인트
+3. 감정적이거나 막연한 추측은 배제하고, 제공된 수치(건수, 억/만원, 단지명)를 적극 인용하여 신뢰도 높은 전문가적 어조로 작성하세요.
+""".strip()
+
+    return prompt
