@@ -37,6 +37,7 @@ jobs:
       - name: Run Collector
         env:
           DATA_GO_KR_API_KEY: ${{ secrets.DATA_GO_KR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: uv run python src/collector.py
 
       - name: Commit and Push DB Changes

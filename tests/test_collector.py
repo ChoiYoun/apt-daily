@@ -60,3 +60,31 @@ def test_collector_mock_run(tmp_path, monkeypatch):
     assert summary["rents_collected"] == 1
     assert summary["db_summary"]["trade_count"] == 1
     assert summary["db_summary"]["rent_count"] == 1
+
+
+def test_collector_generate_daily_analyses(tmp_path, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fake_key")
+    db_file = str(tmp_path / "mock.db")
+    collector = Collector(api_key="mock_key", db_path=db_file)
+    collector.db_manager.init_db()
+
+    # Insert sample trade
+    collector.db_manager.insert_trades([{
+        "deal_date": "2026-10-05", "sido": "서울특별시", "sgg": "종로구",
+        "sgg_cd": "11110", "umd": "청운동", "apt_name": "테스트아파트",
+        "deal_amount": 100000, "exclusive_area": 84.0, "pyeong": 25.4,
+        "price_per_pyeong": 3937, "floor": 5, "build_year": 2015,
+        "buyer_gbn": "개인", "dealing_gbn": "중개거래"
+    }])
+
+    from unittest.mock import MagicMock
+    from src.ai_analyst import GeminiAnalystClient
+
+    mock_get_or_create = MagicMock(return_value={
+        "deal_date": "2026-10-05", "headline": "헤드라인", "summary_markdown": "본문", "model_name": "mock"
+    })
+    monkeypatch.setattr(GeminiAnalystClient, "get_or_create_daily_analysis", mock_get_or_create)
+
+    cnt = collector.generate_daily_analyses()
+    assert cnt == 1
+    mock_get_or_create.assert_called_once()

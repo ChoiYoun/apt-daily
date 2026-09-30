@@ -90,7 +90,6 @@ st.markdown("""
 
 
 # 2. DB 및 메타데이터 로드
-@st.cache_resource
 def get_db():
     db = DatabaseManager("data/real_estate.db")
     db.init_db()
@@ -403,7 +402,10 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.header("📅 일자별 분석 설정")
 
-    available_dates = db.get_available_dates()
+    try:
+        available_dates = db.get_available_dates() if hasattr(db, "get_available_dates") else []
+    except Exception as e:
+        available_dates = []
 
     if not available_dates:
         st.warning("⚠️ 현재 데이터베이스에 저장된 실거래 일자가 없습니다. 먼저 데이터 수집을 실행해 주세요.")

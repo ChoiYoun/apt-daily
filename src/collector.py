@@ -157,7 +157,11 @@ class Collector:
         del_trades, del_rents = self.db_manager.cleanup_old_data(cutoff_date)
         logger.info(f"과거 롤링 데이터 정리: 매매 {del_trades}건 삭제, 전월세 {del_rents}건 삭제")
 
-        # 5. 메타데이터 저장
+        # 5. 일자별 AI 마켓 브리핑 리포트 사전 일괄 생성 (배치)
+        analyses_count = self.generate_daily_analyses()
+        logger.info(f"AI 마켓 브리핑 배치 처리: {analyses_count}건 생성")
+
+        # 6. 메타데이터 저장
         db_summary = self.db_manager.get_summary()
         meta_data = {
             "last_updated": datetime.datetime.now().isoformat(),
@@ -167,6 +171,7 @@ class Collector:
             "rents_collected": len(all_rents),
             "trades_inserted": inserted_trades,
             "rents_inserted": inserted_rents,
+            "ai_analyses_generated": analyses_count,
             "db_summary": db_summary,
         }
 
@@ -176,6 +181,56 @@ class Collector:
 
         logger.info(f"메타데이터 저장 완료: {meta_path}")
         return meta_data
+
+    def generate_daily_analyses(self, max_days: int = 7) -> int:
+        """수집된 최근 일자들에 대해 AI 애널리스트 마켓 브리핑을 사전 일괄 생성하여 DB에 캐싱"""
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        if not gemini_key:
+            logger.warning("GEMINI_API_KEY가 설정되지 않아 일자별 AI 마켓 브리핑 사전 생성을 건너뜁니다.")
+            return 0
+
+        from src.ai_analyst import GeminiAnalystClient
+        client = GeminiAnalystClient(api_key=gemini_key)
+        available_dates = self.db_manager.get_available_dates()
+        if not available_dates:
+            logger.info("생성 대상 일자 데이터가 없습니다.")
+            return 0
+
+        target_dates = available_dates[:max_days]
+        generated_count = 0
+
+        for d in target_dates:
+            # 이미 캐시가 존재하는지 확인
+            cached = self.db_manager.get_daily_analysis(d)
+            if cached is not None:
+                logger.info(f"일자 {d}의 AI 마켓 브리핑이 이미 존재합니다 (캐시 유지).")
+                continue
+
+            trades_df = self.db_manager.query_trades(start_date=d, end_date=d)
+            rents_df = self.db_manager.query_rents(start_date=d, end_date=d)
+
+            if trades_df.empty and rents_df.empty:
+                logger.info(f"일자 {d}의 실거래 데이터가 없어 AI 브리핑 생성을 건너뜁니다.")
+                continue
+
+            try:
+                res = client.get_or_create_daily_analysis(
+                    db_manager=self.db_manager,
+                    deal_date=d,
+                    trades_df=trades_df,
+                    rents_df=rents_df,
+                    force_refresh=True
+                )
+                if not res.get("error"):
+                    generated_count += 1
+                    logger.info(f"AI 마켓 브리핑 사전 생성 성공: {d} (모델: {res.get('model_name')})")
+                else:
+                    logger.warning(f"일자 {d} AI 리포트 생성 실패: {res.get('message')}")
+            except Exception as e:
+                logger.error(f"일자 {d} AI 리포트 생성 중 예외: {e}")
+
+        logger.info(f"총 {generated_count}개 일자의 AI 마켓 브리핑 사전 생성 완료")
+        return generated_count
 
 
 if __name__ == "__main__":
