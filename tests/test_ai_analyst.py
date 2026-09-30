@@ -1,6 +1,8 @@
 import pytest
 import pandas as pd
-from src.ai_analyst import prepare_daily_context, build_analyst_prompt
+from unittest.mock import MagicMock
+from src.db import DatabaseManager
+from src.ai_analyst import prepare_daily_context, build_analyst_prompt, GeminiAnalystClient
 
 def test_prepare_daily_context_normal():
     trades = pd.DataFrame([
@@ -90,3 +92,107 @@ def test_build_analyst_prompt():
     assert "반포자이" in prompt
     assert "한줄 마켓 헤드라인" in prompt
     assert "관전 포인트" in prompt
+
+
+def test_gemini_client_cache_hit(tmp_path):
+    db = DatabaseManager(db_path=str(tmp_path / "test.db"))
+    db.init_db()
+    db.save_daily_analysis(
+        deal_date="2026-09-30",
+        headline="# 기존 저장된 헤드라인",
+        summary_markdown="기존 저장된 본문 내용",
+        model_name="gemini-1.5-flash",
+        trade_count=10,
+        rent_count=5
+    )
+
+    client = GeminiAnalystClient(api_key="test-key")
+    # call_gemini should NOT be called on cache hit
+    client.call_gemini = MagicMock(side_effect=Exception("Should not be called!"))
+
+    res = client.get_or_create_daily_analysis(
+        db_manager=db,
+        deal_date="2026-09-30",
+        trades_df=pd.DataFrame(),
+        rents_df=pd.DataFrame(),
+        force_refresh=False
+    )
+
+    assert res["cached"] is True
+    assert res["headline"] == "# 기존 저장된 헤드라인"
+    assert res["summary_markdown"] == "기존 저장된 본문 내용"
+    client.call_gemini.assert_not_called()
+
+
+def test_gemini_client_generation_and_save(tmp_path):
+    db = DatabaseManager(db_path=str(tmp_path / "test.db"))
+    db.init_db()
+    client = GeminiAnalystClient(api_key="test-key")
+    client.call_gemini = MagicMock(return_value=("# 오늘 시장 헤드라인", "### 1. 시장 분석 본문"))
+
+    trades = pd.DataFrame([{
+        "deal_date": "2026-09-30", "sido": "서울특별시", "sgg": "강남구",
+        "apt_name": "압구정현대", "deal_amount": 450000, "exclusive_area": 114.0,
+        "pyeong": 34.5, "price_per_pyeong": 13043, "floor": 10
+    }])
+    rents = pd.DataFrame()
+
+    res = client.get_or_create_daily_analysis(
+        db_manager=db,
+        deal_date="2026-09-30",
+        trades_df=trades,
+        rents_df=rents,
+        force_refresh=False
+    )
+
+    assert res["cached"] is False
+    assert res["headline"] == "# 오늘 시장 헤드라인"
+    assert res["summary_markdown"] == "### 1. 시장 분석 본문"
+    client.call_gemini.assert_called_once()
+
+    # DB에 정상 영구 저장되었는지 검증
+    saved = db.get_daily_analysis("2026-09-30")
+    assert saved is not None
+    assert saved["headline"] == "# 오늘 시장 헤드라인"
+    assert saved["summary_markdown"] == "### 1. 시장 분석 본문"
+
+
+def test_gemini_client_force_refresh(tmp_path):
+    db = DatabaseManager(db_path=str(tmp_path / "test.db"))
+    db.init_db()
+    db.save_daily_analysis("2026-09-30", "이전 헤드라인", "이전 본문")
+
+    client = GeminiAnalystClient(api_key="test-key")
+    client.call_gemini = MagicMock(return_value=("# 새로고침 헤드라인", "새로고침 본문"))
+
+    res = client.get_or_create_daily_analysis(
+        db_manager=db,
+        deal_date="2026-09-30",
+        trades_df=pd.DataFrame(),
+        rents_df=pd.DataFrame(),
+        force_refresh=True
+    )
+
+    assert res["cached"] is False
+    assert res["headline"] == "# 새로고침 헤드라인"
+    client.call_gemini.assert_called_once()
+
+    # DB 업데이트 검증
+    saved = db.get_daily_analysis("2026-09-30")
+    assert saved["headline"] == "# 새로고침 헤드라인"
+
+
+def test_gemini_client_no_api_key(tmp_path):
+    db = DatabaseManager(db_path=str(tmp_path / "test.db"))
+    db.init_db()
+    client = GeminiAnalystClient(api_key=None)
+
+    res = client.get_or_create_daily_analysis(
+        db_manager=db,
+        deal_date="2026-09-30",
+        trades_df=pd.DataFrame(),
+        rents_df=pd.DataFrame()
+    )
+
+    assert res.get("error") == "NO_API_KEY"
+    assert "GEMINI_API_KEY" in res.get("message", "")

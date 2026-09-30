@@ -285,9 +285,9 @@ class DatabaseManager:
         deal_date: str,
         headline: str,
         summary_markdown: str,
-        model_name: str,
-        trade_count: int,
-        rent_count: int
+        model_name: str = "gemini-1.5-flash",
+        trade_count: int = 0,
+        rent_count: int = 0
     ) -> None:
         """일자별 AI 애널리스트 분석 결과 저장 또는 갱신"""
         sql = """

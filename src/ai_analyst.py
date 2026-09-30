@@ -150,3 +150,140 @@ def build_analyst_prompt(context: Dict[str, Any], deal_date: str) -> str:
 """.strip()
 
     return prompt
+
+
+class GeminiAnalystClient:
+    """Google Gemini REST API 클라이언트 및 분석 리포트 캐싱 오케스트레이터"""
+
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-1.5-flash"):
+        load_dotenv()
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.model = model
+
+    def call_gemini(self, prompt: str) -> Tuple[str, str]:
+        """Gemini 1.5 Flash REST API를 호출하여 헤드라인과 본문 마크다운을 반환"""
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY가 설정되어 있지 않습니다.")
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }],
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": 2048,
+            }
+        }
+
+        # 최대 2회 시도
+        last_err = None
+        for attempt in range(1, 3):
+            try:
+                res = requests.post(url, headers=headers, json=payload, timeout=35)
+                res.raise_for_status()
+                data = res.json()
+
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    raise ValueError(f"Gemini API 응답에 후보(candidates)가 없습니다: {data}")
+
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if not parts:
+                    raise ValueError(f"Gemini API 응답에 내용(parts)이 없습니다: {candidates[0]}")
+
+                full_text = parts[0].get("text", "").strip()
+                if not full_text:
+                    raise ValueError("Gemini API가 빈 텍스트를 반환했습니다.")
+
+                # 첫 번째 줄을 헤드라인으로 추출, 나머지를 본문으로 파싱
+                lines = full_text.splitlines()
+                headline = ""
+                content_lines = []
+                found_headline = False
+
+                for line in lines:
+                    stripped = line.strip()
+                    if not found_headline and stripped:
+                        headline = stripped
+                        found_headline = True
+                    elif found_headline:
+                        content_lines.append(line)
+
+                summary_markdown = "\n".join(content_lines).strip()
+                return headline, summary_markdown
+
+            except requests.RequestException as e:
+                last_err = e
+                logger.warning(f"Gemini API 호출 {attempt}회차 실패: {e}")
+                if attempt < 2:
+                    time.sleep(1.5)
+
+        raise RuntimeError(f"Gemini API 호출에 최종 실패했습니다: {last_err}")
+
+    def get_or_create_daily_analysis(
+        self,
+        db_manager: Any,
+        deal_date: str,
+        trades_df: pd.DataFrame,
+        rents_df: pd.DataFrame,
+        force_refresh: bool = False
+    ) -> Dict[str, Any]:
+        """DB 캐시를 우선 조회하고, 없거나 force_refresh 시 Gemini를 호출하여 DB에 캐싱 후 반환"""
+        # 1. 캐시 우선 확인 (force_refresh가 아닐 때)
+        if not force_refresh:
+            cached = db_manager.get_daily_analysis(deal_date)
+            if cached is not None:
+                cached["cached"] = True
+                return cached
+
+        # 2. API 키 유효성 확인
+        if not self.api_key:
+            # 캐시가 이미 있다면 키가 없어도 캐시 반환
+            cached = db_manager.get_daily_analysis(deal_date)
+            if cached is not None:
+                cached["cached"] = True
+                return cached
+            return {
+                "error": "NO_API_KEY",
+                "message": "GEMINI_API_KEY가 설정되지 않아 AI 마켓 브리핑을 생성할 수 없습니다. .env 파일에 키를 등록해 주세요."
+            }
+
+        # 3. 신규 리포트 생성 및 DB 저장
+        try:
+            ctx = prepare_daily_context(trades_df, rents_df)
+            prompt = build_analyst_prompt(ctx, deal_date)
+            headline, summary_markdown = self.call_gemini(prompt)
+
+            trade_count = len(trades_df) if trades_df is not None and not trades_df.empty else 0
+            rent_count = len(rents_df) if rents_df is not None and not rents_df.empty else 0
+
+            db_manager.save_daily_analysis(
+                deal_date=deal_date,
+                headline=headline,
+                summary_markdown=summary_markdown,
+                model_name=self.model,
+                trade_count=trade_count,
+                rent_count=rent_count
+            )
+
+            return {
+                "deal_date": deal_date,
+                "headline": headline,
+                "summary_markdown": summary_markdown,
+                "model_name": self.model,
+                "cached": False
+            }
+        except Exception as e:
+            logger.error(f"Gemini 일일 분석 생성 중 오류 발생: {e}", exc_info=True)
+            # 폴백: 기존 캐시가 있다면 경고와 함께 반환
+            cached = db_manager.get_daily_analysis(deal_date)
+            if cached is not None:
+                cached["cached"] = True
+                cached["warning"] = f"새 리포트 생성에 실패하여 기존 저장된 리포트를 표시합니다. ({str(e)})"
+                return cached
+            return {
+                "error": "API_ERROR",
+                "message": f"Gemini API 호출 중 오류가 발생했습니다: {str(e)}"
+            }
