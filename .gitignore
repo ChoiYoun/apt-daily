@@ -1,7 +1,47 @@
+# Python & 가상환경
 .venv/
+venv/
+ENV/
+env/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# 테스트 및 캐시
 .pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# 환경 변수 및 시크릿
 .env
+.env.local
+.env.*.local
+!.env.example
+
+# IDE 및 편집기
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 운영체제 캐시 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 로그 및 임시 파일
+*.log
+*.tmp
+
+# SQLite 임시/저널 파일
 data/*.db-journal
-.superpowers/sdd/
+data/*.db-wal
+data/*.db-shm
+
+# Superpowers 및 문서 제외 설정
+GEMINI.md
+docs/
+.superpowers/
