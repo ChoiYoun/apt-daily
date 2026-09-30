@@ -6,23 +6,32 @@ env/
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+build/
+dist/
+*.egg-info/
 
-# 테스트 및 캐시
+# 테스트 및 린터 캐시
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .mypy_cache/
 .ruff_cache/
 
-# 환경 변수 및 시크릿
+# 환경 변수, 시크릿 및 스트림릿 설정
 .env
 .env.local
 .env.*.local
 !.env.example
+*.pem
+*.key
+.streamlit/secrets.toml
 
-# IDE 및 편집기
+# IDE 및 편집기 설정
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 *~
@@ -36,12 +45,15 @@ desktop.ini
 *.log
 *.tmp
 
-# SQLite 임시/저널 파일
+# SQLite 임시/저널/잠금 파일
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+data/*.tmp
 
-# Superpowers 및 문서 제외 설정
+# AI 에이전트 및 Superpowers 내부 설정/스킬/문서 (GitHub 배포 제외)
+.agents/
+skills/
+.superpowers/
 GEMINI.md
 docs/
-.superpowers/
