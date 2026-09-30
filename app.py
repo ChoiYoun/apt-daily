@@ -85,15 +85,6 @@ st.markdown("""
         color: #FFFFFF;
         line-height: 1.4;
     }
-    .ai-body-card {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-left: 5px solid #2563EB;
-        border-radius: 10px;
-        padding: 24px;
-        margin-bottom: 25px;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -513,30 +504,33 @@ else:
             # 정상 또는 캐시 로드된 리포트
             headline = report.get("headline", "")
             summary_markdown = report.get("summary_markdown", "")
-            model_name = report.get("model_name", "gemini-1.5-flash")
+            model_name = report.get("model_name", "gemini-flash-lite-latest")
             is_cached = report.get("cached", False)
             created_at = report.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
             cache_label = "💾 캐시 로드 (0.01s)" if is_cached else "⚡ 신규 실시간 생성"
 
-            # 헤더 카드
-            st.markdown(f"""
-            <div class="ai-header-card">
-                <div class="ai-meta">
-                    🤖 부동산 수석 애널리스트 마켓 브리핑 &bull; 모델: {model_name} &bull; {cache_label} &bull; {created_at}
+            # 헤드라인 텍스트 전처리 (마크다운 기호 및 메타 태그 정제)
+            clean_headline = headline.lstrip("#").strip()
+            for prefix in ["[한줄 마켓 헤드라인]", "[마켓 헤드라인]", "[데일리 마켓 브리핑]", "[데일리 브리핑]", "[한줄 헤드라인]"]:
+                if clean_headline.startswith(prefix):
+                    clean_headline = clean_headline[len(prefix):].strip()
+
+            with st.container(border=True):
+                # 헤더 카드
+                st.markdown(f"""
+                <div class="ai-header-card">
+                    <div class="ai-meta">
+                        🤖 부동산 수석 애널리스트 마켓 브리핑 &bull; 모델: {model_name} &bull; {cache_label} &bull; {created_at}
+                    </div>
+                    <div class="ai-headline">{clean_headline}</div>
                 </div>
-                <div class="ai-headline">{headline}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-            # 본문 마크다운 카드
-            st.markdown(f"""
-            <div class="ai-body-card">
-            """, unsafe_allow_html=True)
-            st.markdown(summary_markdown)
-            st.markdown("</div>", unsafe_allow_html=True)
+                # 본문 마크다운
+                st.markdown(summary_markdown)
 
-            if report.get("warning"):
-                st.warning(report["warning"])
+                if report.get("warning"):
+                    st.warning(report["warning"])
 
         st.markdown("<br>", unsafe_allow_html=True)
 
