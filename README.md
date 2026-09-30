@@ -18,6 +18,10 @@ GitHub Actions와 Streamlit Community Cloud를 연동하여 **서버 비용 0원
    - **핵심 KPI 메트릭**: 총 거래량, 최고가/최고보증금 거래 단지, 평균 거래금액, 평당 가격, 최다 거래 지역.
    - **Plotly 인터랙티브 차트**: 일자별 거래량 추이, 시군구 거래량 TOP 10, 금액대별 분포, 평형대별 거래 비중.
    - **상세 거래 테이블 & CSV 내보내기**: 한글 금액 표기(`15억 5,000만원`), 컬럼 정렬, 필터링된 데이터 CSV 다운로드.
+4. **AI 부동산 수석 애널리스트 일일 마켓 브리핑 (`src/ai_analyst.py`)**:
+   - **일자별 심층 분석 리포트**: Google Gemini 1.5 Flash를 연동하여 특정 일자의 매매/임대 시장 흐름, 유동성, 최고가 거래 단지, 시사점 및 투자/실수요 관전 포인트를 전문적으로 브리핑.
+   - **SQLite 영구 캐싱**: 최초 1회 생성 후 DB(`daily_analysis`)에 캐싱되어 재조회 시 API 호출 없이 즉각(0.01초) 로딩.
+   - **원클릭 재생성 지원**: 최신 데이터 반영이 필요할 경우 '🔄 리포트 재생성' 버튼으로 언제든 리프레시 가능.
 
 ---
 
@@ -56,14 +60,18 @@ uv sync
 ```
 
 ### 2. 환경 변수 설정
-`.env` 파일에 발급받은 공공데이터포털 일반 인증키를 등록합니다:
+`.env` 파일에 국토교통부 공공데이터포털 인증키 및 Google Gemini API 키를 등록합니다:
 ```bash
 cp .env.example .env
 ```
 `.env` 내용:
 ```env
 DATA_GO_KR_API_KEY=your_public_data_portal_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
+> [!NOTE]
+> `GEMINI_API_KEY`는 [Google AI Studio](https://aistudio.google.com/)에서 무료(Free tier)로 즉시 발급받을 수 있습니다. 키가 없더라도 대시보드와 수치 통계는 정상 조회됩니다.
+
 
 ### 3. 데이터 수집 실행
 ```bash
@@ -99,8 +107,8 @@ uv run pytest -v
    ```
 2. GitHub 저장소의 **Settings > Secrets and variables > Actions**로 이동합니다.
 3. **New repository secret**을 클릭하고 아래와 같이 등록합니다:
-   - Name: `DATA_GO_KR_API_KEY`
-   - Secret: 공공데이터포털 인증키 입력
+   - Name: `DATA_GO_KR_API_KEY` / Secret: 공공데이터포털 인증키 입력
+   - Name: `GEMINI_API_KEY` / Secret: Google AI Studio API 키 입력
 4. **Actions** 탭에서 **Daily Real Estate Data Collector** 워크플로를 수동 실행(`Run workflow`)하여 정상 동작을 확인합니다.
 
 ### 2단계: Streamlit Community Cloud 무료 배포
@@ -110,8 +118,13 @@ uv run pytest -v
    - **Repository**: 생성한 GitHub 저장소 선택
    - **Branch**: `main`
    - **Main file path**: `app.py`
-4. **Deploy!** 버튼을 클릭하면 약 1분 내에 전 세계 어디서나 접근 가능한 무료 대시보드가 배포됩니다.
-5. 이후 GitHub Actions가 매일 새벽 데이터를 갱신하여 푸시하면, Streamlit 앱이 자동으로 최신 DB를 조회하여 화면에 반영합니다.
+4. **Advanced settings > Secrets**에 `.env`와 동일하게 환경 변수를 등록합니다:
+   ```toml
+   DATA_GO_KR_API_KEY = "your_key"
+   GEMINI_API_KEY = "your_gemini_key"
+   ```
+5. **Deploy!** 버튼을 클릭하면 약 1분 내에 전 세계 어디서나 접근 가능한 무료 대시보드가 배포됩니다.
+6. 이후 GitHub Actions가 매일 새벽 데이터를 갱신하여 푸시하면, Streamlit 앱이 자동으로 최신 DB를 조회하여 화면에 반영합니다.
 
 ---
 
