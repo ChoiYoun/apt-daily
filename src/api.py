@@ -33,24 +33,30 @@ class ApiClient:
         }
 
         last_error = None
+        last_resp_text = ""
         for attempt in range(self.max_retries):
             try:
                 resp = self.session.get(url, params=params, timeout=self.timeout)
+                resp.encoding = "utf-8"
+                last_resp_text = resp.text
+
                 if resp.status_code == 200:
-                    resp.encoding = "utf-8"
+                    if "LIMITED_NUMBER_OF_SERVICE_REQUESTS_PER_SECOND" in resp.text:
+                        time.sleep(1.2 * (attempt + 1))
+                        continue
                     return resp.text
                 elif resp.status_code in (429, 500, 502, 503, 504):
-                    time.sleep(1.0 * (2 ** attempt))
+                    time.sleep(1.2 * (2 ** attempt))
                     continue
                 else:
                     return resp.text
             except (requests.RequestException, TimeoutError) as e:
                 last_error = e
-                time.sleep(1.0 * (2 ** attempt))
+                time.sleep(1.2 * (2 ** attempt))
 
         if last_error:
             raise last_error
-        return ""
+        return last_resp_text
 
     def fetch_trades(self, lawd_cd: str, deal_ymd: str, page_no: int = 1, num_of_rows: int = 1000) -> str:
         """아파트 매매 실거래가 원본 XML 조회"""

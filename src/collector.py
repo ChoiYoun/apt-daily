@@ -1,12 +1,20 @@
 """최근 7일 전국 아파트 매매 및 전월세 실거래가 수집 파이프라인 모듈"""
 
 import os
+import sys
+import time
 import json
 import logging
 import datetime
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional, List, Dict, Tuple
 from dotenv import load_dotenv
+
+# 스크립트 직접 실행 시(python src/collector.py) 프로젝트 루트를 sys.path에 추가하여 src 모듈 인식 보장
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.regions import REGIONS
 from src.db import DatabaseManager
@@ -20,7 +28,7 @@ logger = logging.getLogger(__name__)
 class Collector:
     """전국 250개 시군구 매매 및 전월세 실거래가 수집 오케스트레이터"""
 
-    def __init__(self, api_key: str, db_path: str = "data/real_estate.db", max_workers: int = 5):
+    def __init__(self, api_key: str, db_path: str = "data/real_estate.db", max_workers: int = 3):
         if not api_key:
             raise ValueError("API 키가 제공되지 않았습니다.")
         self.api_key = api_key
@@ -30,7 +38,7 @@ class Collector:
         self.db_manager = DatabaseManager(db_path=db_path)
 
     @classmethod
-    def from_env(cls, db_path: str = "data/real_estate.db", max_workers: int = 5) -> "Collector":
+    def from_env(cls, db_path: str = "data/real_estate.db", max_workers: int = 3) -> "Collector":
         """환경변수(.env)에서 API 키를 읽어 인스턴스 생성"""
         load_dotenv()
         key = os.environ.get("DATA_GO_KR_API_KEY")
@@ -82,6 +90,8 @@ class Collector:
                     trades.append(t)
             except Exception as e:
                 logger.warning(f"[{region['sido']} {region['sgg']}][매매] 수집 실패 ({month}): {e}")
+
+            time.sleep(0.05)
 
             # 2. 전월세 수집
             try:
