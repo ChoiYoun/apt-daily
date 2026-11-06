@@ -1,22 +1,22 @@
 {
-  "last_updated": "2026-11-05T01:11:21.049492",
-  "target_date": "2026-11-05",
-  "cutoff_date": "2026-10-30",
-  "trades_collected": 2932,
-  "rents_collected": 6537,
-  "trades_inserted": 713,
-  "rents_inserted": 1490,
+  "last_updated": "2026-11-06T01:17:03.853949",
+  "target_date": "2026-11-06",
+  "cutoff_date": "2026-10-31",
+  "trades_collected": 2983,
+  "rents_collected": 6403,
+  "trades_inserted": 696,
+  "rents_inserted": 1396,
   "ai_analyses_generated": 1,
   "db_summary": {
-    "trade_count": 2911,
-    "rent_count": 6432,
+    "trade_count": 2955,
+    "rent_count": 6294,
     "trade_date_range": [
-      "2026-10-30",
-      "2026-11-04"
+      "2026-10-31",
+      "2026-11-05"
     ],
     "rent_date_range": [
-      "2026-10-30",
-      "2026-11-04"
+      "2026-10-31",
+      "2026-11-05"
     ]
   }
 }
